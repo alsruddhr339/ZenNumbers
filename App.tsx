@@ -291,22 +291,32 @@ const App: React.FC = () => {
         let finalImageUrl = cachedUploadUrl;
         
         if (!finalImageUrl && resultRef.current) {
-          const canvas = await html2canvas(resultRef.current, {
+          // html2canvas가 간혹 무한루프에 빠지는 것을 방지하기 위한 타임아웃
+          const capturePromise = html2canvas(resultRef.current, {
             backgroundColor: '#020617',
-            scale: 1.2, // 모바일 성능을 위해 스케일 약간 조정
+            scale: 1.0, // 해상도 낮추어 속도 우선
             useCORS: true,
             logging: false,
-            // 블러 효과가 html2canvas를 멈추게 할 수 있으므로 캡처 시 제거
             onclone: (clonedDoc) => {
-              const elements = clonedDoc.querySelectorAll('.glass, .backdrop-blur-md, .backdrop-blur-3xl');
+              // 캡처 전용 스타일: 모든 블러와 애니메이션 제거
+              const elements = clonedDoc.querySelectorAll('*');
               elements.forEach((el: any) => {
-                el.style.backdropFilter = 'none';
-                el.style.webkitBackdropFilter = 'none';
-                el.style.background = 'rgba(15, 23, 42, 0.95)';
+                el.style.animation = 'none';
+                el.style.transition = 'none';
+                if (el.classList.contains('glass') || el.classList.contains('backdrop-blur-md') || el.classList.contains('backdrop-blur-3xl')) {
+                  el.style.backdropFilter = 'none';
+                  el.style.webkitBackdropFilter = 'none';
+                  el.style.background = 'rgba(15, 23, 42, 0.98)';
+                }
               });
             },
             ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
           });
+
+          // 5초 타임아웃
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
+          
+          const canvas: any = await Promise.race([capturePromise, timeoutPromise]);
           
           setCaptureStep("UPLOADING");
           const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
@@ -321,7 +331,7 @@ const App: React.FC = () => {
           objectType: 'feed',
           content: {
             title: `젠 넘버즈: ${difficulty.name[lang]} 챌린지`,
-            description: `${userName} 마스터의 기록: ${formattedTime}초\n집중력의 한계를 돌파했습니다.\n\n지금 도전: ${CURRENT_URL}`,
+            description: `${userName} 마스터의 기록: ${formattedTime}초\n\n지금 도전: ${CURRENT_URL}`,
             imageUrl: finalImageUrl || 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
             link: {
               mobileWebUrl: CURRENT_URL,
@@ -339,8 +349,18 @@ const App: React.FC = () => {
           ],
         });
       } catch (e) {
-        console.error("Kakao Share Error:", e);
-        alert(lang === 'KO' ? "공유 중 오류가 발생했습니다." : "Error during sharing.");
+        console.error("Sharing sequence failure:", e);
+        // 캡처 실패 시에도 기본 이미지로 카톡 창은 띄워줌
+        window.Kakao.Share.sendDefault({
+          objectType: 'feed',
+          content: {
+            title: `젠 넘버즈: ${difficulty.name[lang]} 챌린지`,
+            description: `${userName} 마스터의 기록: ${formattedTime}초\n\n지금 도전: ${CURRENT_URL}`,
+            imageUrl: 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
+            link: { mobileWebUrl: CURRENT_URL, webUrl: CURRENT_URL },
+          },
+          buttons: [{ title: '나도 도전하기', link: { mobileWebUrl: CURRENT_URL, webUrl: CURRENT_URL } }],
+        });
       } finally {
         setIsCapturing(false);
         setCaptureStep("");
@@ -359,21 +379,25 @@ const App: React.FC = () => {
         try {
           const canvas = await html2canvas(resultRef.current, {
             backgroundColor: '#020617',
-            scale: 2,
+            scale: 1.5,
             useCORS: true,
             logging: false,
             onclone: (clonedDoc) => {
-                const elements = clonedDoc.querySelectorAll('.glass, .backdrop-blur-md, .backdrop-blur-3xl');
+                const elements = clonedDoc.querySelectorAll('*');
                 elements.forEach((el: any) => {
-                  el.style.backdropFilter = 'none';
-                  el.style.webkitBackdropFilter = 'none';
-                  el.style.background = 'rgba(15, 23, 42, 0.95)';
+                  el.style.animation = 'none';
+                  el.style.transition = 'none';
+                  if (el.classList.contains('glass') || el.classList.contains('backdrop-blur-md') || el.classList.contains('backdrop-blur-3xl')) {
+                    el.style.backdropFilter = 'none';
+                    el.style.webkitBackdropFilter = 'none';
+                    el.style.background = 'rgba(15, 23, 42, 0.98)';
+                  }
                 });
             },
             ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore'),
           });
           
-          canvas.toBlob(async (blob) => {
+          canvas.toBlob(async (blob: any) => {
             if (!blob) {
               setIsCapturing(false);
               setCaptureStep("");
@@ -404,16 +428,16 @@ const App: React.FC = () => {
             setSharingPlatform(null);
           });
         } catch (e) {
-          console.error("Capture Error:", e);
+          console.error("Download Error:", e);
           setIsCapturing(false);
           setCaptureStep("");
           setSharingPlatform(null);
         }
-    } else if (platform === 'fb') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(CURRENT_URL)}`, '_blank');
-      setSharingPlatform(null);
-    } else if (platform === 'tw') {
-      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(CURRENT_URL)}`, '_blank');
+    } else if (platform === 'fb' || platform === 'tw') {
+      const url = platform === 'fb' 
+        ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(CURRENT_URL)}`
+        : `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(CURRENT_URL)}`;
+      window.open(url, '_blank');
       setSharingPlatform(null);
     }
   };
@@ -489,136 +513,3 @@ const App: React.FC = () => {
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); loadGlobalRankings(d.id); }} className="absolute -right-2 -top-2 p-2.5 bg-slate-900 border border-slate-700 rounded-2xl text-yellow-500 shadow-xl z-10"><Trophy size={16} /></button>
                       </div>
-                    );
-                  })}
-                </div>
-                <button onClick={startGame} className="w-full mt-4 bg-gradient-to-br from-indigo-500 to-pink-600 text-white font-black py-5 rounded-[2rem] shadow-2xl flex items-center justify-center gap-4 uppercase tracking-widest active:scale-95"><Play size={24} fill="currentColor" /> {t.start}</button>
-              </div>
-            )}
-
-            {status === 'COUNTDOWN' && <div className="flex items-center justify-center h-80 text-[12rem] font-black text-white drop-shadow-2xl animate-ping opacity-50">{countdown === 0 ? "GO" : countdown}</div>}
-
-            {(status === 'PLAYING' || status === 'FINISHED') && (
-              <div className={`w-full flex flex-col items-center gap-6 pb-20 transition-all ${status === 'FINISHED' ? 'blur-sm scale-95 opacity-50' : ''}`}>
-                <div className="w-full flex justify-between glass px-8 py-5 rounded-[2.5rem] sticky top-4 z-20 backdrop-blur-3xl">
-                  <div className="flex flex-col"><span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{t.progression}</span><div className="text-2xl font-black">{nextExpected - 1}<span className="text-slate-600 mx-1">/</span><span className="text-slate-400 text-sm">{difficulty.total}</span></div></div>
-                  <div className="flex flex-col items-end"><span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{t.elapsed}</span><div className="text-2xl font-black text-indigo-300">{elapsedTime.toFixed(4)}s</div></div>
-                </div>
-                <div className="glass p-4 md:p-6 rounded-[3rem] grid gap-3 w-full aspect-square max-w-[500px]" style={{ gridTemplateColumns: `repeat(${difficulty.size}, 1fr)` }}>
-                  {numbers.map((num) => (
-                    <button key={num} disabled={num < nextExpected || status === 'FINISHED'} onClick={() => handleCellClick(num)} className={`relative rounded-2xl flex items-center justify-center text-2xl font-black transition-all ${num < nextExpected || status === 'FINISHED' ? 'opacity-0 scale-50 pointer-events-none' : 'bg-white/5 border border-white/10 hover:bg-indigo-500/20 active:scale-90'} ${wrongFlash === num ? 'bg-red-500 text-white shake' : 'text-slate-300'}`}>{num}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </main>
-
-          <div className={`fixed inset-0 z-[100] flex items-end justify-center transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${status === 'FINISHED' ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}>
-            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setStatus('IDLE')}></div>
-            <div ref={resultRef} className="w-full max-w-2xl glass bg-slate-900/95 rounded-t-[4rem] p-10 flex flex-col items-center relative shadow-2xl overflow-hidden">
-              <div data-html2canvas-ignore className="w-12 h-1.5 bg-white/10 rounded-full mb-10"></div>
-              
-              <div className="flex flex-col items-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-lg mb-4">
-                  <Trophy size={32} className="text-white" />
-                </div>
-                <h3 className="text-4xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500">{t.complete}</h3>
-                <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em] mt-1">{difficulty.name[lang]} CHALLENGE</p>
-              </div>
-
-              {isPB && <div className="bg-green-500/20 border border-green-500/50 text-green-400 px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 animate-pulse flex items-center gap-2"><ShieldCheck size={14} /> {t.pbUpdated}</div>}
-              
-              <div className="grid grid-cols-2 gap-4 w-full mb-8">
-                <div className="bg-white/5 p-6 rounded-[2.5rem] flex flex-col items-center border border-white/5"><span className="text-[9px] text-slate-500 uppercase font-black">{t.elapsed}</span><div className="text-3xl font-black text-indigo-300">{elapsedTime.toFixed(6)}s</div></div>
-                <div className="bg-indigo-500/10 p-6 rounded-[2.5rem] flex flex-col items-center border border-white/5"><span className="text-[9px] text-indigo-400 uppercase font-black">{t.globalRank}</span><div className="text-3xl font-black text-white">#{globalRank || '...'}</div></div>
-              </div>
-
-              {aiMessage && (
-                <div className="w-full bg-white/5 p-6 rounded-[2.5rem] mb-8 flex gap-4 text-left border border-white/5">
-                  <MessageSquareQuote size={20} className="text-indigo-400 flex-shrink-0" />
-                  <p className="text-slate-200 italic font-bold">"{aiMessage}"</p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 mb-8 opacity-40">
-                <Link size={12} className="text-slate-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ZEN NUMBERS • {window.location.host}</span>
-              </div>
-
-              <div data-html2canvas-ignore className="grid grid-cols-2 gap-4 w-full">
-                <button onClick={() => setShowShareModal(true)} className="bg-indigo-600 py-6 rounded-3xl font-black flex items-center justify-center gap-3 uppercase text-xs tracking-widest transition-transform active:scale-95"><Share2 size={20} /> {t.share}</button>
-                <button onClick={startGame} className="bg-white/5 py-6 rounded-3xl font-black flex items-center justify-center gap-3 uppercase text-xs tracking-widest border border-white/10 transition-transform active:scale-95"><RotateCcw size={20} /> {t.retry}</button>
-              </div>
-              <button data-html2canvas-ignore onClick={() => setStatus('IDLE')} className="mt-6 text-slate-600 text-[10px] uppercase font-black tracking-widest">{t.home}</button>
-              
-              {isCapturing && (
-                <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
-                  <Loader2 className="animate-spin text-indigo-400 mb-4" size={40} />
-                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">
-                    {captureStep === "RENDERING" ? (lang === 'KO' ? "이미지 생성 중..." : "Creating Image...") : 
-                     captureStep === "UPLOADING" ? (lang === 'KO' ? "서버 업로드 중..." : "Uploading to Cloud...") : 
-                     (lang === 'KO' ? "공유 준비 중..." : "Finalizing...")}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {showShareModal && (
-            <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 backdrop-blur-3xl bg-slate-950/80 animate-in fade-in zoom-in-95 duration-300">
-              <div className="glass w-full max-w-sm rounded-[4rem] shadow-4xl border-white/10 p-10 flex flex-col items-center">
-                <div className="w-16 h-16 bg-indigo-500/20 rounded-3xl flex items-center justify-center mb-6"><Share2 size={32} className="text-indigo-400" /></div>
-                <h3 className="text-2xl font-black mb-3 uppercase tracking-tighter">{t.share}</h3>
-                <p className="text-slate-500 text-[10px] text-center mb-10 font-bold px-4 leading-relaxed uppercase tracking-widest">Select Platform</p>
-                <div className="grid grid-cols-2 gap-6 w-full mb-10">
-                  <button onClick={() => shareToSocial('ka')} className="flex flex-col items-center gap-3 group relative">
-                    <div className="w-14 h-14 bg-[#FEE500] text-[#191919] rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><MessageCircle size={24} fill="currentColor" /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">KakaoTalk</span>
-                    {isCapturing && sharingPlatform === 'ka' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
-                  </button>
-                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group relative">
-                    <div className="w-14 h-14 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Instagram size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Instagram</span>
-                    {isCapturing && sharingPlatform === 'ig' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
-                  </button>
-                  <button onClick={() => shareToSocial('dl')} className="flex flex-col items-center gap-3 group relative">
-                    <div className="w-14 h-14 bg-white/10 text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Download size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Save Image</span>
-                    {isCapturing && sharingPlatform === 'dl' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
-                  </button>
-                  <button onClick={() => shareToSocial('copy')} className="flex flex-col items-center gap-3 group">
-                    <div className="w-14 h-14 bg-indigo-600/20 text-indigo-400 rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Copy size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Copy Link</span>
-                  </button>
-                </div>
-                <button onClick={() => setShowShareModal(false)} className="w-full py-5 glass border-white/10 rounded-3xl text-[10px] font-black uppercase tracking-widest text-slate-400">Close</button>
-              </div>
-            </div>
-          )}
-
-          {showRankingsFor && (
-            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-2xl bg-slate-950/80 animate-in fade-in">
-              <div className="glass w-full max-w-md rounded-[3.5rem] shadow-4xl border-white/10 flex flex-col max-h-[85vh]">
-                <div className="p-8 border-b border-white/5 flex justify-between items-center"><h3 className="text-xl font-black flex items-center gap-3"><Trophy size={20} className="text-yellow-500" /> {DIFFICULTIES.find(d => d.id === showRankingsFor)?.name[lang]} Top 1000</h3><button onClick={() => setShowRankingsFor(null)}><X size={24} /></button></div>
-                <div className="overflow-y-auto p-6 space-y-3">
-                  {globalScores.length > 0 ? globalScores.map((s, i) => (
-                    <div key={s.id} className={`flex justify-between items-center p-5 rounded-3xl border transition-all ${s.userId === userId ? 'bg-indigo-500/20 border-indigo-500' : 'bg-white/5 border-transparent'}`}>
-                      <div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${i < 3 ? 'bg-yellow-500 text-black' : 'bg-white/10 text-slate-500'}`}>{i + 1}</div><div><div className="text-[9px] font-black uppercase text-slate-500">{s.userName}</div><div className="text-lg font-black">{s.time.toFixed(6)}s</div></div></div>
-                      {i < 3 && <Medal size={20} className="text-yellow-500" />}
-                    </div>
-                  )) : <div className="py-20 text-center opacity-30 text-[10px] font-black uppercase tracking-[0.3em]">{t.noRecords}</div>}
-                </div>
-                <div className="p-8"><button onClick={() => setShowRankingsFor(null)} className="w-full py-5 glass rounded-3xl text-[10px] font-black uppercase tracking-widest">Close</button></div>
-              </div>
-            </div>
-          )}
-
-          <footer className="w-full py-16 text-center text-slate-800 text-[10px] font-black tracking-[0.5em] uppercase">Zen Edition 최종 5.0 • Master Net</footer>
-        </>
-      )}
-      <style>{`.shake { animation: shake 0.12s ease-in-out 3; } @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }`}</style>
-    </div>
-  );
-};
-
-export default App;
