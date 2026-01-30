@@ -26,7 +26,7 @@ const App: React.FC = () => {
   const [isRankLoading, setIsRankLoading] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
-  // Fix: Track the active sharing platform to resolve the reference error in the result overlay
+  const [captureStep, setCaptureStep] = useState<string>(""); 
   const [sharingPlatform, setSharingPlatform] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [wrongFlash, setWrongFlash] = useState<number | null>(null);
@@ -275,7 +275,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // Fix: Set active sharing platform for UI feedback
     setSharingPlatform(platform);
 
     if (platform === 'ka') {
@@ -286,17 +285,30 @@ const App: React.FC = () => {
       }
 
       setIsCapturing(true);
+      setCaptureStep("RENDERING");
+      
       try {
         let finalImageUrl = cachedUploadUrl;
         
         if (!finalImageUrl && resultRef.current) {
           const canvas = await html2canvas(resultRef.current, {
             backgroundColor: '#020617',
-            scale: 1.5,
+            scale: 1.2, // 모바일 성능을 위해 스케일 약간 조정
             useCORS: true,
+            logging: false,
+            // 블러 효과가 html2canvas를 멈추게 할 수 있으므로 캡처 시 제거
+            onclone: (clonedDoc) => {
+              const elements = clonedDoc.querySelectorAll('.glass, .backdrop-blur-md, .backdrop-blur-3xl');
+              elements.forEach((el: any) => {
+                el.style.backdropFilter = 'none';
+                el.style.webkitBackdropFilter = 'none';
+                el.style.background = 'rgba(15, 23, 42, 0.95)';
+              });
+            },
             ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
           });
           
+          setCaptureStep("UPLOADING");
           const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
           if (blob) {
             finalImageUrl = await uploadResultImage(blob, currentScoreId);
@@ -304,6 +316,7 @@ const App: React.FC = () => {
           }
         }
 
+        setCaptureStep("SHARING");
         window.Kakao.Share.sendDefault({
           objectType: 'feed',
           content: {
@@ -327,8 +340,10 @@ const App: React.FC = () => {
         });
       } catch (e) {
         console.error("Kakao Share Error:", e);
+        alert(lang === 'KO' ? "공유 중 오류가 발생했습니다." : "Error during sharing.");
       } finally {
         setIsCapturing(false);
+        setCaptureStep("");
         setSharingPlatform(null);
       }
       return;
@@ -340,18 +355,28 @@ const App: React.FC = () => {
           return;
         }
         setIsCapturing(true);
+        setCaptureStep("RENDERING");
         try {
           const canvas = await html2canvas(resultRef.current, {
             backgroundColor: '#020617',
             scale: 2,
             useCORS: true,
             logging: false,
+            onclone: (clonedDoc) => {
+                const elements = clonedDoc.querySelectorAll('.glass, .backdrop-blur-md, .backdrop-blur-3xl');
+                elements.forEach((el: any) => {
+                  el.style.backdropFilter = 'none';
+                  el.style.webkitBackdropFilter = 'none';
+                  el.style.background = 'rgba(15, 23, 42, 0.95)';
+                });
+            },
             ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore'),
           });
           
           canvas.toBlob(async (blob) => {
             if (!blob) {
               setIsCapturing(false);
+              setCaptureStep("");
               setSharingPlatform(null);
               return;
             }
@@ -375,11 +400,13 @@ const App: React.FC = () => {
                 alert(lang === 'KO' ? "이미지를 저장했습니다. 인스타그램에 공유해보세요!" : "Image saved. Share it on Instagram!");
             }
             setIsCapturing(false);
+            setCaptureStep("");
             setSharingPlatform(null);
           });
         } catch (e) {
           console.error("Capture Error:", e);
           setIsCapturing(false);
+          setCaptureStep("");
           setSharingPlatform(null);
         }
     } else if (platform === 'fb') {
@@ -527,8 +554,11 @@ const App: React.FC = () => {
               {isCapturing && (
                 <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
                   <Loader2 className="animate-spin text-indigo-400 mb-4" size={40} />
-                  {/* Fixed: replaced undefined 'platform' reference with 'sharingPlatform' state */}
-                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">{sharingPlatform === 'ka' ? 'Preparing Image...' : 'Processing...'}</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">
+                    {captureStep === "RENDERING" ? (lang === 'KO' ? "이미지 생성 중..." : "Creating Image...") : 
+                     captureStep === "UPLOADING" ? (lang === 'KO' ? "서버 업로드 중..." : "Uploading to Cloud...") : 
+                     (lang === 'KO' ? "공유 준비 중..." : "Finalizing...")}
+                  </span>
                 </div>
               )}
             </div>
@@ -544,7 +574,6 @@ const App: React.FC = () => {
                   <button onClick={() => shareToSocial('ka')} className="flex flex-col items-center gap-3 group relative">
                     <div className="w-14 h-14 bg-[#FEE500] text-[#191919] rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><MessageCircle size={24} fill="currentColor" /></div>
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">KakaoTalk</span>
-                    {/* Improved: feedback based on sharingPlatform state */}
                     {isCapturing && sharingPlatform === 'ka' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
                   </button>
                   <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group relative">
