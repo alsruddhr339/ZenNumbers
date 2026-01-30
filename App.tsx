@@ -267,7 +267,7 @@ const App: React.FC = () => {
         content: {
           title: `ZENNUM : ${difficulty.name[lang]}`,
           description: `${userName} - ${formattedTime}s\n${t.subtitle}`,
-          imageUrl: BRAND_POSTER_URL,
+          img: "zen.png" , alt:"zen.png", imglink:"https://zennum.netlify.app/",
           link: {
             mobileWebUrl: CURRENT_URL,
             webUrl: CURRENT_URL,
