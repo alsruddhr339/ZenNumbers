@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal, X, Share2, Globe, Facebook, Twitter, MessageCircle, User, ArrowUp, Loader2, Instagram, Volume2, VolumeX, ShieldCheck, Download, Copy } from 'lucide-react';
+import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal, X, Share2, Globe, User, Volume2, VolumeX, ShieldCheck, Download, Copy, MessageCircle, Instagram, Loader2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { Difficulty, DIFFICULTIES, GameStatus, ScoreEntry, TRANSLATIONS, Language } from './types';
 import { getMotivationalMessage } from './services/geminiService';
@@ -28,7 +28,6 @@ const App: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const [wrongFlash, setWrongFlash] = useState<number | null>(null);
-  const [localRank, setLocalRank] = useState<number | null>(null);
   const [globalRank, setGlobalRank] = useState<number | null>(null);
   const [showRankingsFor, setShowRankingsFor] = useState<string | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -50,8 +49,32 @@ const App: React.FC = () => {
   const resultRef = useRef<HTMLDivElement>(null);
   const t = TRANSLATIONS[lang];
 
-  // Updated Kakao JavaScript Key
+  // 카카오톡 설정
   const KAKAO_KEY = 'a7c872a95007ae033c540c81f170eaeb';
+  const BASE_URL = 'https://zennumers.netlify.app/';
+
+  const ensureKakaoInit = () => {
+    if (window.Kakao) {
+      if (!window.Kakao.isInitialized()) {
+        try {
+          window.Kakao.init(KAKAO_KEY);
+        } catch (e) {
+          console.error("Kakao Init Error", e);
+        }
+      }
+      return window.Kakao.isInitialized();
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    ensureKakaoInit();
+    const saved = localStorage.getItem('zen_all_scores');
+    if (saved) {
+      try { setAllScores(JSON.parse(saved)); } catch (e) { setAllScores([]); }
+    }
+    return () => stopMusic();
+  }, []);
 
   const initAudio = () => {
     if (!audioCtxRef.current) {
@@ -96,33 +119,6 @@ const App: React.FC = () => {
     }
   };
 
-  const ensureKakaoInit = () => {
-    if (window.Kakao) {
-      if (!window.Kakao.isInitialized()) {
-        try {
-          window.Kakao.init(KAKAO_KEY);
-          console.log("Kakao SDK Initialized with new key");
-        } catch (e) {
-          console.error("Kakao Init fail", e);
-        }
-      }
-      return window.Kakao.isInitialized();
-    }
-    return false;
-  };
-
-  useEffect(() => {
-    ensureKakaoInit();
-  }, []);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('zen_all_scores');
-    if (saved) {
-      try { setAllScores(JSON.parse(saved)); } catch (e) { setAllScores([]); }
-    }
-    return () => stopMusic();
-  }, []);
-
   const shuffle = (array: number[]) => {
     const arr = [...array];
     for (let i = arr.length - 1; i > 0; i--) {
@@ -141,7 +137,6 @@ const App: React.FC = () => {
     setNextExpected(1);
     setElapsedTime(0);
     setAiMessage("");
-    setLocalRank(null);
     setGlobalRank(null);
     setIsPB(false);
     setShowShareModal(false);
@@ -217,8 +212,6 @@ const App: React.FC = () => {
     const difficultyScores = updatedScores
       .filter(s => s.difficultyId === difficulty.id)
       .sort((a, b) => a.time - b.time);
-    const rank = difficultyScores.findIndex(s => s.id === newScore.id) + 1;
-    setLocalRank(rank);
 
     const previousBest = difficultyScores.length > 1 ? difficultyScores.filter(s => s.id !== newScore.id)[0] : null;
     const isNewPB = !previousBest || finalTime < previousBest.time;
@@ -261,110 +254,86 @@ const App: React.FC = () => {
     setGlobalScores(scores);
   };
 
-  const captureResultAsBlob = async (): Promise<Blob | null> => {
-    if (!resultRef.current) return null;
-    setIsCapturing(true);
-    try {
-      await new Promise(r => setTimeout(r, 200));
-      
-      const canvas = await html2canvas(resultRef.current, {
-        backgroundColor: '#020617',
-        scale: 1.5,
-        logging: false,
-        useCORS: true,
-        allowTaint: true,
-        ignoreElements: (el) => el.tagName === 'BUTTON' || el.classList.contains('no-capture')
-      });
-      
-      return new Promise((resolve) => {
-        canvas.toBlob((blob) => resolve(blob), 'image/png', 0.9);
-      });
-    } catch (e) {
-      console.error("Capture failed", e);
-      return null;
-    } finally {
-      setIsCapturing(false);
-    }
-  };
-
   const shareToSocial = async (platform: 'fb' | 'tw' | 'ka' | 'ig' | 'dl' | 'copy') => {
-    const shareText = t.shareMsg.replace('{time}', elapsedTime.toFixed(6));
-    const shareUrl = window.location.origin + window.location.pathname;
+    const formattedTime = elapsedTime.toFixed(6);
+    const shareText = t.shareMsg.replace('{time}', formattedTime);
     
     if (platform === 'copy') {
       try {
-        await navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
-        alert(lang === 'KO' ? "결과 링크가 복사되었습니다!" : "Link copied to clipboard!");
+        await navigator.clipboard.writeText(`${shareText}\n${BASE_URL}`);
+        alert(lang === 'KO' ? "결과 링크가 복사되었습니다!" : "Link copied!");
       } catch (e) {
-        alert(lang === 'KO' ? "링크 복사에 실패했습니다." : "Failed to copy link.");
+        alert("Copy failed");
       }
       return;
     }
 
-    if (platform === 'dl' || platform === 'ig') {
-      const blob = await captureResultAsBlob();
-      if (!blob) return;
-
-      if (platform === 'dl') {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ZenNumbers_${elapsedTime.toFixed(4)}s.png`;
-        a.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-
-      const file = new File([blob], 'zen_result.png', { type: 'image/png' });
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: 'Zen Numbers',
-            text: shareText,
-          });
-        } catch (e) {
-          shareToSocial('dl');
-        }
-      } else {
-        shareToSocial('dl');
-        alert(lang === 'KO' ? "이미지가 저장되었습니다. 인스타그램에 공유해보세요!" : "Image saved. Share it on Instagram!");
-      }
-    } else if (platform === 'ka') {
+    if (platform === 'ka') {
       if (ensureKakaoInit()) {
-        try {
-          window.Kakao.Share.sendDefault({
-            objectType: 'feed',
-            content: {
-              title: `젠 넘버즈: ${difficulty.name[lang]}`,
-              description: `${userName} 마스터의 기록: ${elapsedTime.toFixed(6)}초!`,
-              imageUrl: 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=500&auto=format&fit=crop',
+        window.Kakao.Share.sendDefault({
+          objectType: 'feed',
+          content: {
+            title: `젠 넘버즈: ${difficulty.name[lang]} 챌린지`,
+            description: `${userName} 마스터의 기록: ${formattedTime}초\n집중력의 한계를 돌파했습니다.`,
+            imageUrl: 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
+            link: {
+              mobileWebUrl: BASE_URL,
+              webUrl: BASE_URL,
+            },
+          },
+          social: {
+            likeCount: 777,
+            commentCount: 99,
+            sharedCount: 333,
+          },
+          buttons: [
+            {
+              title: '지금 도전하기',
               link: {
-                mobileWebUrl: shareUrl,
-                webUrl: shareUrl,
+                mobileWebUrl: BASE_URL,
+                webUrl: BASE_URL,
               },
             },
-            buttons: [
-              {
-                title: '지금 도전하기',
-                link: {
-                  mobileWebUrl: shareUrl,
-                  webUrl: shareUrl,
-                },
-              },
-            ],
+          ],
+        });
+      } else {
+        alert("Kakao SDK load failed. Please try again.");
+      }
+      return;
+    }
+
+    // 기본 Web Share API 또는 다운로드 로직 (FB, TW 등은 기존과 동일)
+    if (platform === 'dl' || platform === 'ig') {
+        if (!resultRef.current) return;
+        setIsCapturing(true);
+        try {
+          const canvas = await html2canvas(resultRef.current, {
+            backgroundColor: '#020617',
+            scale: 2,
+            useCORS: true,
+          });
+          canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            if (platform === 'dl') {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `Zen_${formattedTime}s.png`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } else if (navigator.share) {
+              const file = new File([blob], 'zen_result.png', { type: 'image/png' });
+              await navigator.share({ files: [file], title: 'Zen Numbers', text: shareText });
+            }
+            setIsCapturing(false);
           });
         } catch (e) {
-          console.error("Kakao Share Error", e);
-          shareToSocial('copy');
+          setIsCapturing(false);
         }
-      } else {
-        shareToSocial('copy');
-      }
     } else if (platform === 'fb') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank');
+      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(BASE_URL)}`, '_blank');
     } else if (platform === 'tw') {
-      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`, '_blank');
+      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(BASE_URL)}`, '_blank');
     }
   };
 
@@ -377,15 +346,6 @@ const App: React.FC = () => {
 
       {status === 'SETUP' ? (
         <div className="flex-grow flex flex-col items-center justify-center p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-          <div className="absolute top-6 right-6 z-40">
-            <button 
-              onClick={() => setLang(l => l === 'KO' ? 'EN' : 'KO')} 
-              className="glass flex items-center gap-2 px-4 py-2 rounded-2xl border-white/10 hover:bg-white/5 transition-all"
-            >
-              <Globe size={16} className="text-indigo-400" />
-              <span className="text-xs font-black uppercase tracking-widest">{lang}</span>
-            </button>
-          </div>
           <div className="glass w-full p-10 rounded-[3.5rem] text-center border-white/10 shadow-4xl relative">
             <div className="w-20 h-20 bg-indigo-500/20 rounded-[2rem] flex items-center justify-center mx-auto mb-8">
               <User size={40} className="text-indigo-400" />
@@ -543,7 +503,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <footer className="w-full py-16 text-center text-slate-800 text-[10px] font-black tracking-[0.5em] uppercase">Zen Edition 최종 4.0 • Master Net</footer>
+          <footer className="w-full py-16 text-center text-slate-800 text-[10px] font-black tracking-[0.5em] uppercase">Zen Edition 최종 5.0 • Master Net</footer>
         </>
       )}
       <style>{`.shake { animation: shake 0.12s ease-in-out 3; } @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }`}</style>

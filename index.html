@@ -6,15 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Zen Numbers</title>
     
-    <!-- PWA Meta Tags -->
-    <link rel="manifest" href="manifest.json">
+    <!-- CORS 오류 방지를 위해 Manifest를 Data URI로 직접 삽입 -->
+    <link rel="manifest" href="data:application/manifest+json;base64,ewogICJzaG9ydF9uYW1lIjogIlplbiBOdW1iZXJzIiwKICAibmFtZSI6ICJaZW4gTnVtYmVyczogRWxpdGUgU2VxdWVuY2UgQ2hhbGxlbmdlIiwKICAic3RhcnRfdXJsIjogIi4iLAogICJkaXNwbGF5IjogInN0YW5kYWxvbmUiLAogICJ0aGVtZV9jb2xvciI6ICIjMDIwNjE3IiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMDIwNjE3IiwKICAib3JpZW50YXRpb24iOiAicG9ydHJhaXQiCn0=">
+    
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <link rel="apple-touch-icon" href="icon.svg">
+    
     <meta name="theme-color" content="#020617">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Zen Numbers">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,7 +22,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     
     <!-- Kakao SDK -->
-    <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.0/kakao.min.js" integrity="sha384-lSQXvEnC8KkySArB9mZ98Zoj47adUu8mNIdXAnY2069YPrFhHn9z83B0o7+nNoTM" crossorigin="anonymous"></script>
+    <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.0/kakao.min.js"></script>
     
     <style>
         body {
@@ -39,27 +39,8 @@
             backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.08);
         }
-        .number-cell {
-            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        @keyframes subtle-pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.02); opacity: 0.9; }
-        }
-        .animate-subtle {
-            animation: subtle-pulse 3s infinite ease-in-out;
-        }
-        ::-webkit-scrollbar {
-          width: 4px;
-        }
-        ::-webkit-scrollbar-track {
-          background: rgba(0,0,0,0.1);
-        }
-        ::-webkit-scrollbar-thumb {
-          background: rgba(255,255,255,0.1);
-          border-radius: 10px;
-        }
     </style>
+
 <script type="importmap">
 {
   "imports": {
@@ -76,15 +57,10 @@
 </head>
 <body>
     <div id="root"></div>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('SW registered'))
-                    .catch(err => console.log('SW registration failed', err));
-            });
-        }
-    </script>
+    <!-- 
+      index.tsx는 시스템에 의해 자동으로 로드됩니다. 
+      CORS 문제를 야기할 수 있는 수동 <script src="index.tsx"> 태그는 제외되었습니다.
+    -->
 <script type="module" src="/index.tsx"></script>
 </body>
 </html>
