@@ -4,7 +4,7 @@ import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal
 import html2canvas from 'html2canvas';
 import { Difficulty, DIFFICULTIES, GameStatus, ScoreEntry, TRANSLATIONS, Language } from './types';
 import { getMotivationalMessage } from './services/geminiService';
-import { uploadScore, getGlobalRankings, getGlobalRankForScore } from './services/firebaseService';
+import { uploadScore, getGlobalRankings, getGlobalRankForScore, uploadResultImage } from './services/firebaseService';
 
 declare global {
   interface Window {
@@ -26,12 +26,15 @@ const App: React.FC = () => {
   const [isRankLoading, setIsRankLoading] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  // Fix: Track the active sharing platform to resolve the reference error in the result overlay
+  const [sharingPlatform, setSharingPlatform] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
   const [wrongFlash, setWrongFlash] = useState<number | null>(null);
   const [globalRank, setGlobalRank] = useState<number | null>(null);
   const [showRankingsFor, setShowRankingsFor] = useState<string | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [userName, setUserName] = useState<string>(localStorage.getItem('zen_user_name') || '');
+  const [currentScoreId, setCurrentScoreId] = useState<string>("");
   const [userId] = useState<string>(() => {
     let id = localStorage.getItem('zen_user_id');
     if (!id) {
@@ -42,6 +45,7 @@ const App: React.FC = () => {
   });
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [isPB, setIsPB] = useState(false);
+  const [cachedUploadUrl, setCachedUploadUrl] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -139,6 +143,7 @@ const App: React.FC = () => {
     setGlobalRank(null);
     setIsPB(false);
     setShowShareModal(false);
+    setCachedUploadUrl(null);
     setNumbers(shuffle(Array.from({ length: difficulty.total }, (_, i) => i + 1)));
     setStatus('COUNTDOWN');
     setCountdown(3);
@@ -195,8 +200,11 @@ const App: React.FC = () => {
     setElapsedTime(finalTime);
     playSound(1100, 'sine', 0.5, 0.1);
 
+    const scoreId = Math.random().toString(36).substr(2, 9);
+    setCurrentScoreId(scoreId);
+
     const newScore: ScoreEntry = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: scoreId,
       userId,
       difficultyId: difficulty.id,
       time: finalTime,
@@ -267,27 +275,49 @@ const App: React.FC = () => {
       return;
     }
 
+    // Fix: Set active sharing platform for UI feedback
+    setSharingPlatform(platform);
+
     if (platform === 'ka') {
-      if (ensureKakaoInit()) {
+      if (!ensureKakaoInit()) {
+        alert("Kakao SDK load failed.");
+        setSharingPlatform(null);
+        return;
+      }
+
+      setIsCapturing(true);
+      try {
+        let finalImageUrl = cachedUploadUrl;
+        
+        if (!finalImageUrl && resultRef.current) {
+          const canvas = await html2canvas(resultRef.current, {
+            backgroundColor: '#020617',
+            scale: 1.5,
+            useCORS: true,
+            ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
+          });
+          
+          const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+          if (blob) {
+            finalImageUrl = await uploadResultImage(blob, currentScoreId);
+            setCachedUploadUrl(finalImageUrl);
+          }
+        }
+
         window.Kakao.Share.sendDefault({
           objectType: 'feed',
           content: {
             title: `젠 넘버즈: ${difficulty.name[lang]} 챌린지`,
-            description: `${userName} 마스터의 기록: ${formattedTime}초\n집중력의 한계를 돌파했습니다.`,
-            imageUrl: 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
+            description: `${userName} 마스터의 기록: ${formattedTime}초\n집중력의 한계를 돌파했습니다.\n\n지금 도전: ${CURRENT_URL}`,
+            imageUrl: finalImageUrl || 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
             link: {
               mobileWebUrl: CURRENT_URL,
               webUrl: CURRENT_URL,
             },
           },
-          social: {
-            likeCount: 777,
-            commentCount: 99,
-            sharedCount: 333,
-          },
           buttons: [
             {
-              title: '지금 도전하기',
+              title: '나도 도전하기',
               link: {
                 mobileWebUrl: CURRENT_URL,
                 webUrl: CURRENT_URL,
@@ -295,17 +325,22 @@ const App: React.FC = () => {
             },
           ],
         });
-      } else {
-        alert("Kakao SDK load failed. Please try again.");
+      } catch (e) {
+        console.error("Kakao Share Error:", e);
+      } finally {
+        setIsCapturing(false);
+        setSharingPlatform(null);
       }
       return;
     }
 
     if (platform === 'dl' || platform === 'ig') {
-        if (!resultRef.current) return;
+        if (!resultRef.current) {
+          setSharingPlatform(null);
+          return;
+        }
         setIsCapturing(true);
         try {
-          // 캡처 전용 스타일 조정을 위해 임시 클래스 추가
           const canvas = await html2canvas(resultRef.current, {
             backgroundColor: '#020617',
             scale: 2,
@@ -315,7 +350,11 @@ const App: React.FC = () => {
           });
           
           canvas.toBlob(async (blob) => {
-            if (!blob) return;
+            if (!blob) {
+              setIsCapturing(false);
+              setSharingPlatform(null);
+              return;
+            }
             if (platform === 'dl') {
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
@@ -325,9 +364,8 @@ const App: React.FC = () => {
               URL.revokeObjectURL(url);
             } else if (navigator.share) {
               const file = new File([blob], 'zen_result.png', { type: 'image/png' });
-              await navigator.share({ files: [file], title: 'Zen Numbers', text: shareText });
+              await navigator.share({ files: [file], title: 'Zen Numbers', text: shareText + "\n" + CURRENT_URL });
             } else {
-                // Fallback for desktop Instagram share (mostly image save)
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -337,15 +375,19 @@ const App: React.FC = () => {
                 alert(lang === 'KO' ? "이미지를 저장했습니다. 인스타그램에 공유해보세요!" : "Image saved. Share it on Instagram!");
             }
             setIsCapturing(false);
+            setSharingPlatform(null);
           });
         } catch (e) {
           console.error("Capture Error:", e);
           setIsCapturing(false);
+          setSharingPlatform(null);
         }
     } else if (platform === 'fb') {
       window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(CURRENT_URL)}`, '_blank');
+      setSharingPlatform(null);
     } else if (platform === 'tw') {
       window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(CURRENT_URL)}`, '_blank');
+      setSharingPlatform(null);
     }
   };
 
@@ -471,10 +513,9 @@ const App: React.FC = () => {
                 </div>
               )}
 
-              {/* 브랜딩 URL (이미지에 포함됨) */}
               <div className="flex items-center gap-2 mb-8 opacity-40">
                 <Link size={12} className="text-slate-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ZEN NUMBERS • zennumbers.netlify.app</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ZEN NUMBERS • {window.location.host}</span>
               </div>
 
               <div data-html2canvas-ignore className="grid grid-cols-2 gap-4 w-full">
@@ -486,7 +527,8 @@ const App: React.FC = () => {
               {isCapturing && (
                 <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
                   <Loader2 className="animate-spin text-indigo-400 mb-4" size={40} />
-                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">Processing...</span>
+                  {/* Fixed: replaced undefined 'platform' reference with 'sharingPlatform' state */}
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-400">{sharingPlatform === 'ka' ? 'Preparing Image...' : 'Processing...'}</span>
                 </div>
               )}
             </div>
@@ -499,17 +541,21 @@ const App: React.FC = () => {
                 <h3 className="text-2xl font-black mb-3 uppercase tracking-tighter">{t.share}</h3>
                 <p className="text-slate-500 text-[10px] text-center mb-10 font-bold px-4 leading-relaxed uppercase tracking-widest">Select Platform</p>
                 <div className="grid grid-cols-2 gap-6 w-full mb-10">
-                  <button onClick={() => shareToSocial('ka')} className="flex flex-col items-center gap-3 group">
+                  <button onClick={() => shareToSocial('ka')} className="flex flex-col items-center gap-3 group relative">
                     <div className="w-14 h-14 bg-[#FEE500] text-[#191919] rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><MessageCircle size={24} fill="currentColor" /></div>
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">KakaoTalk</span>
+                    {/* Improved: feedback based on sharingPlatform state */}
+                    {isCapturing && sharingPlatform === 'ka' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
                   </button>
-                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group">
+                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group relative">
                     <div className="w-14 h-14 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Instagram size={24} /></div>
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Instagram</span>
+                    {isCapturing && sharingPlatform === 'ig' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
                   </button>
-                  <button onClick={() => shareToSocial('dl')} className="flex flex-col items-center gap-3 group">
+                  <button onClick={() => shareToSocial('dl')} className="flex flex-col items-center gap-3 group relative">
                     <div className="w-14 h-14 bg-white/10 text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Download size={24} /></div>
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Save Image</span>
+                    {isCapturing && sharingPlatform === 'dl' && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-2xl"><Loader2 size={20} className="animate-spin text-white" /></div>}
                   </button>
                   <button onClick={() => shareToSocial('copy')} className="flex flex-col items-center gap-3 group">
                     <div className="w-14 h-14 bg-indigo-600/20 text-indigo-400 rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Copy size={24} /></div>

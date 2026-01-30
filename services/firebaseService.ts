@@ -1,6 +1,7 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getFirestore, collection, setDoc, doc, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 import { ScoreEntry } from "../types";
 
 const firebaseConfig = {
@@ -15,6 +16,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 export const uploadScore = async (score: ScoreEntry) => {
   try {
@@ -30,9 +32,19 @@ export const uploadScore = async (score: ScoreEntry) => {
   }
 };
 
+export const uploadResultImage = async (blob: Blob, scoreId: string): Promise<string | null> => {
+  try {
+    const storageRef = ref(storage, `results/${scoreId}_${Date.now()}.png`);
+    await uploadBytes(storageRef, blob);
+    return await getDownloadURL(storageRef);
+  } catch (e) {
+    console.error("Firebase storage upload error:", e);
+    return null;
+  }
+};
+
 export const getGlobalRankForScore = async (difficultyId: string, time: number): Promise<number | null> => {
   try {
-    // Attempt filtered query
     const q = query(
       collection(db, "rankings"),
       where("difficultyId", "==", difficultyId),
@@ -41,7 +53,6 @@ export const getGlobalRankForScore = async (difficultyId: string, time: number):
     const snapshot = await getDocs(q);
     return snapshot.size + 1;
   } catch (e: any) {
-    // Silently fallback if index is missing to avoid audit log clutter
     try {
       const fallbackQ = query(collection(db, "rankings"), where("difficultyId", "==", difficultyId));
       const snapshot = await getDocs(fallbackQ);
