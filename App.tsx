@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal, X, Share2, Globe, User, Volume2, VolumeX, ShieldCheck, Download, Copy, MessageCircle, Instagram, Loader2 } from 'lucide-react';
+import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal, X, Share2, Globe, User, Volume2, VolumeX, ShieldCheck, Download, Copy, MessageCircle, Instagram, Loader2, Link } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { Difficulty, DIFFICULTIES, GameStatus, ScoreEntry, TRANSLATIONS, Language } from './types';
 import { getMotivationalMessage } from './services/geminiService';
@@ -49,9 +49,8 @@ const App: React.FC = () => {
   const resultRef = useRef<HTMLDivElement>(null);
   const t = TRANSLATIONS[lang];
 
-  // 카카오톡 설정
   const KAKAO_KEY = 'a7c872a95007ae033c540c81f170eaeb';
-  const BASE_URL = 'https://zennumers.netlify.app/';
+  const CURRENT_URL = window.location.origin;
 
   const ensureKakaoInit = () => {
     if (window.Kakao) {
@@ -260,7 +259,7 @@ const App: React.FC = () => {
     
     if (platform === 'copy') {
       try {
-        await navigator.clipboard.writeText(`${shareText}\n${BASE_URL}`);
+        await navigator.clipboard.writeText(`${shareText}\n${CURRENT_URL}`);
         alert(lang === 'KO' ? "결과 링크가 복사되었습니다!" : "Link copied!");
       } catch (e) {
         alert("Copy failed");
@@ -277,8 +276,8 @@ const App: React.FC = () => {
             description: `${userName} 마스터의 기록: ${formattedTime}초\n집중력의 한계를 돌파했습니다.`,
             imageUrl: 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
             link: {
-              mobileWebUrl: BASE_URL,
-              webUrl: BASE_URL,
+              mobileWebUrl: CURRENT_URL,
+              webUrl: CURRENT_URL,
             },
           },
           social: {
@@ -290,8 +289,8 @@ const App: React.FC = () => {
             {
               title: '지금 도전하기',
               link: {
-                mobileWebUrl: BASE_URL,
-                webUrl: BASE_URL,
+                mobileWebUrl: CURRENT_URL,
+                webUrl: CURRENT_URL,
               },
             },
           ],
@@ -306,11 +305,15 @@ const App: React.FC = () => {
         if (!resultRef.current) return;
         setIsCapturing(true);
         try {
+          // 캡처 전용 스타일 조정을 위해 임시 클래스 추가
           const canvas = await html2canvas(resultRef.current, {
             backgroundColor: '#020617',
             scale: 2,
             useCORS: true,
+            logging: false,
+            ignoreElements: (element) => element.hasAttribute('data-html2canvas-ignore'),
           });
+          
           canvas.toBlob(async (blob) => {
             if (!blob) return;
             if (platform === 'dl') {
@@ -323,16 +326,26 @@ const App: React.FC = () => {
             } else if (navigator.share) {
               const file = new File([blob], 'zen_result.png', { type: 'image/png' });
               await navigator.share({ files: [file], title: 'Zen Numbers', text: shareText });
+            } else {
+                // Fallback for desktop Instagram share (mostly image save)
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Zen_Instagram_${formattedTime}s.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+                alert(lang === 'KO' ? "이미지를 저장했습니다. 인스타그램에 공유해보세요!" : "Image saved. Share it on Instagram!");
             }
             setIsCapturing(false);
           });
         } catch (e) {
+          console.error("Capture Error:", e);
           setIsCapturing(false);
         }
     } else if (platform === 'fb') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(BASE_URL)}`, '_blank');
+      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(CURRENT_URL)}`, '_blank');
     } else if (platform === 'tw') {
-      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(BASE_URL)}`, '_blank');
+      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(CURRENT_URL)}`, '_blank');
     }
   };
 
@@ -434,19 +447,42 @@ const App: React.FC = () => {
           <div className={`fixed inset-0 z-[100] flex items-end justify-center transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${status === 'FINISHED' ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}>
             <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setStatus('IDLE')}></div>
             <div ref={resultRef} className="w-full max-w-2xl glass bg-slate-900/95 rounded-t-[4rem] p-10 flex flex-col items-center relative shadow-2xl overflow-hidden">
-              <div className="w-12 h-1.5 bg-white/10 rounded-full mb-10 no-capture"></div>
-              {isPB && <div className="bg-green-500/20 border border-green-500/50 text-green-400 px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 animate-pulse flex items-center gap-2"><ShieldCheck size={14} /> {t.pbUpdated}</div>}
-              <h3 className="text-4xl font-black italic mb-8 uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500">{t.complete}</h3>
-              <div className="grid grid-cols-2 gap-4 w-full mb-10">
-                <div className="bg-white/5 p-6 rounded-[2.5rem] flex flex-col items-center"><span className="text-[9px] text-slate-500 uppercase font-black">{t.elapsed}</span><div className="text-3xl font-black text-indigo-300">{elapsedTime.toFixed(6)}s</div></div>
-                <div className="bg-indigo-500/10 p-6 rounded-[2.5rem] flex flex-col items-center"><span className="text-[9px] text-indigo-400 uppercase font-black">{t.globalRank}</span><div className="text-3xl font-black text-white">#{globalRank || '...'}</div></div>
+              <div data-html2canvas-ignore className="w-12 h-1.5 bg-white/10 rounded-full mb-10"></div>
+              
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-lg mb-4">
+                  <Trophy size={32} className="text-white" />
+                </div>
+                <h3 className="text-4xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500">{t.complete}</h3>
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em] mt-1">{difficulty.name[lang]} CHALLENGE</p>
               </div>
-              {aiMessage && <div className="w-full bg-white/5 p-6 rounded-[2.5rem] mb-10 flex gap-4 text-left border border-white/5"><MessageSquareQuote size={20} className="text-indigo-400 flex-shrink-0" /><p className="text-slate-200 italic font-bold">"{aiMessage}"</p></div>}
-              <div className="grid grid-cols-2 gap-4 w-full no-capture">
+
+              {isPB && <div className="bg-green-500/20 border border-green-500/50 text-green-400 px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 animate-pulse flex items-center gap-2"><ShieldCheck size={14} /> {t.pbUpdated}</div>}
+              
+              <div className="grid grid-cols-2 gap-4 w-full mb-8">
+                <div className="bg-white/5 p-6 rounded-[2.5rem] flex flex-col items-center border border-white/5"><span className="text-[9px] text-slate-500 uppercase font-black">{t.elapsed}</span><div className="text-3xl font-black text-indigo-300">{elapsedTime.toFixed(6)}s</div></div>
+                <div className="bg-indigo-500/10 p-6 rounded-[2.5rem] flex flex-col items-center border border-white/5"><span className="text-[9px] text-indigo-400 uppercase font-black">{t.globalRank}</span><div className="text-3xl font-black text-white">#{globalRank || '...'}</div></div>
+              </div>
+
+              {aiMessage && (
+                <div className="w-full bg-white/5 p-6 rounded-[2.5rem] mb-8 flex gap-4 text-left border border-white/5">
+                  <MessageSquareQuote size={20} className="text-indigo-400 flex-shrink-0" />
+                  <p className="text-slate-200 italic font-bold">"{aiMessage}"</p>
+                </div>
+              )}
+
+              {/* 브랜딩 URL (이미지에 포함됨) */}
+              <div className="flex items-center gap-2 mb-8 opacity-40">
+                <Link size={12} className="text-slate-400" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ZEN NUMBERS • zennumbers.netlify.app</span>
+              </div>
+
+              <div data-html2canvas-ignore className="grid grid-cols-2 gap-4 w-full">
                 <button onClick={() => setShowShareModal(true)} className="bg-indigo-600 py-6 rounded-3xl font-black flex items-center justify-center gap-3 uppercase text-xs tracking-widest transition-transform active:scale-95"><Share2 size={20} /> {t.share}</button>
                 <button onClick={startGame} className="bg-white/5 py-6 rounded-3xl font-black flex items-center justify-center gap-3 uppercase text-xs tracking-widest border border-white/10 transition-transform active:scale-95"><RotateCcw size={20} /> {t.retry}</button>
               </div>
-              <button onClick={() => setStatus('IDLE')} className="mt-6 text-slate-600 text-[10px] uppercase font-black tracking-widest no-capture">{t.home}</button>
+              <button data-html2canvas-ignore onClick={() => setStatus('IDLE')} className="mt-6 text-slate-600 text-[10px] uppercase font-black tracking-widest">{t.home}</button>
+              
               {isCapturing && (
                 <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
                   <Loader2 className="animate-spin text-indigo-400 mb-4" size={40} />
