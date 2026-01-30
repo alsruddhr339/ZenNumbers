@@ -302,7 +302,6 @@ const App: React.FC = () => {
       return;
     }
 
-    // 기본 Web Share API 또는 다운로드 로직 (FB, TW 등은 기존과 동일)
     if (platform === 'dl' || platform === 'ig') {
         if (!resultRef.current) return;
         setIsCapturing(true);
@@ -468,17 +467,17 @@ const App: React.FC = () => {
                     <div className="w-14 h-14 bg-[#FEE500] text-[#191919] rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><MessageCircle size={24} fill="currentColor" /></div>
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">KakaoTalk</span>
                   </button>
-                  <button onClick={() => shareToSocial('copy')} className="flex flex-col items-center gap-3 group">
-                    <div className="w-14 h-14 bg-indigo-600/20 text-indigo-400 rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Copy size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Copy Link</span>
+                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group">
+                    <div className="w-14 h-14 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Instagram size={24} /></div>
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Instagram</span>
                   </button>
                   <button onClick={() => shareToSocial('dl')} className="flex flex-col items-center gap-3 group">
                     <div className="w-14 h-14 bg-white/10 text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Download size={24} /></div>
                     <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Save Image</span>
                   </button>
-                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group">
-                    <div className="w-14 h-14 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Instagram size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Instagram</span>
+                  <button onClick={() => shareToSocial('copy')} className="flex flex-col items-center gap-3 group">
+                    <div className="w-14 h-14 bg-indigo-600/20 text-indigo-400 rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Copy size={24} /></div>
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Copy Link</span>
                   </button>
                 </div>
                 <button onClick={() => setShowShareModal(false)} className="w-full py-5 glass border-white/10 rounded-3xl text-[10px] font-black uppercase tracking-widest text-slate-400">Close</button>
