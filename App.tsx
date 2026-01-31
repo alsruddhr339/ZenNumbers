@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal, X, Share2, Globe, User, Volume2, VolumeX, ShieldCheck, Download, Copy, MessageCircle, Instagram, Loader2, Link } from 'lucide-react';
+import { Trophy, Play, RotateCcw, Award, ChevronRight, MessageSquareQuote, Medal, X, Share2, Globe, User, Volume2, VolumeX, ShieldCheck, Download, Copy, MessageCircle, Instagram, Loader2, Link as LinkIcon, Zap } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { Difficulty, DIFFICULTIES, GameStatus, ScoreEntry, TRANSLATIONS, Language } from './types';
 import { getMotivationalMessage } from './services/geminiService';
@@ -12,8 +12,13 @@ declare global {
   }
 }
 
+// 제공된 포스터 이미지를 공유용으로 사용
+const BRAND_POSTER_URL = "https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=1000&auto=format&fit=crop";
+
+// 카카오톡 메시지 템플릿 설정 (카카오 개발자 콘솔에서 생성한 템플릿 ID를 입력하세요)
+const KAKAO_TEMPLATE_ID = 110486; // 예시 ID입니다. 실제 생성한 ID로 변경해주세요.
+
 const App: React.FC = () => {
-  // 기본 언어를 'EN'으로 설정
   const [lang, setLang] = useState<Language>('EN');
   const [status, setStatus] = useState<GameStatus>(localStorage.getItem('zen_user_name') ? 'IDLE' : 'SETUP');
   const [difficulty, setDifficulty] = useState<Difficulty>(DIFFICULTIES[1]);
@@ -46,7 +51,6 @@ const App: React.FC = () => {
   });
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [isPB, setIsPB] = useState(false);
-  const [cachedUploadUrl, setCachedUploadUrl] = useState<string | null>(null);
 
   const timerRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -54,16 +58,19 @@ const App: React.FC = () => {
   const resultRef = useRef<HTMLDivElement>(null);
   const t = TRANSLATIONS[lang];
 
-  const KAKAO_KEY = 'a7c872a95007ae033c540c81f170eaeb';
-  const CURRENT_URL = window.location.href;
+  // 사용하려는 앱의 JavaScript 키
+  const JAVASCRIPT_KEY = 'a7c872a95007ae033c540c81f170eaeb';
+  const CURRENT_URL = window.location.origin;
 
+  // 카카오 SDK 초기화 및 상태 확인
   const ensureKakaoInit = () => {
     if (window.Kakao) {
       if (!window.Kakao.isInitialized()) {
-        try {
-          window.Kakao.init(KAKAO_KEY);
-        } catch (e) {
-          console.error("Kakao Init Error", e);
+        try { 
+          window.Kakao.init(JAVASCRIPT_KEY); 
+          console.log("Kakao SDK Initialized");
+        } catch (e) { 
+          console.error("Kakao Init Error", e); 
         }
       }
       return window.Kakao.isInitialized();
@@ -81,15 +88,11 @@ const App: React.FC = () => {
   }, []);
 
   const initAudio = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume().catch(console.warn);
-    }
+    if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
   };
 
-  const playSound = (freq: number, type: OscillatorType = 'sine', duration: number = 0.1, volume: number = 0.1, decay: boolean = true) => {
+  const playSound = (freq: number, type: OscillatorType = 'sine', duration: number = 0.1, volume: number = 0.1) => {
     if (!audioEnabled || !audioCtxRef.current) return;
     try {
       const osc = audioCtxRef.current.createOscillator();
@@ -97,7 +100,7 @@ const App: React.FC = () => {
       osc.type = type;
       osc.frequency.setValueAtTime(freq, audioCtxRef.current.currentTime);
       gain.gain.setValueAtTime(volume, audioCtxRef.current.currentTime);
-      if (decay) gain.gain.exponentialRampToValueAtTime(0.0001, audioCtxRef.current.currentTime + duration);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtxRef.current.currentTime + duration);
       osc.connect(gain);
       gain.connect(audioCtxRef.current.destination);
       osc.start();
@@ -110,8 +113,7 @@ const App: React.FC = () => {
     let step = 0;
     musicIntervalRef.current = window.setInterval(() => {
       const isDownbeat = step % 4 === 0;
-      playSound(isDownbeat ? 55 : 40, 'triangle', 0.6, isDownbeat ? 0.15 : 0.08);
-      if (step % 2 === 1) playSound(1800, 'sine', 0.02, 0.005);
+      playSound(isDownbeat ? 55 : 40, 'triangle', 0.6, isDownbeat ? 0.1 : 0.05);
       step++;
     }, 400);
   };
@@ -133,10 +135,7 @@ const App: React.FC = () => {
   };
 
   const startGame = () => {
-    if (!userName.trim()) {
-      setStatus('SETUP');
-      return;
-    }
+    if (!userName.trim()) { setStatus('SETUP'); return; }
     initAudio();
     setNextExpected(1);
     setElapsedTime(0);
@@ -144,7 +143,6 @@ const App: React.FC = () => {
     setGlobalRank(null);
     setIsPB(false);
     setShowShareModal(false);
-    setCachedUploadUrl(null);
     setNumbers(shuffle(Array.from({ length: difficulty.total }, (_, i) => i + 1)));
     setStatus('COUNTDOWN');
     setCountdown(3);
@@ -177,15 +175,14 @@ const App: React.FC = () => {
   const handleCellClick = (num: number) => {
     if (status !== 'PLAYING') return;
     if (num === nextExpected) {
-      playSound(1000 + (num * 30), 'sine', 0.08, 0.1); 
-      if (num === difficulty.total) {
-        finishGame();
-      } else {
+      playSound(800 + (num * 20), 'sine', 0.08, 0.1); 
+      if (num === difficulty.total) { finishGame(); }
+      else {
         setNextExpected(prev => prev + 1);
         if (window.navigator.vibrate) window.navigator.vibrate(10);
       }
     } else {
-      playSound(120, 'square', 0.4, 0.2); 
+      playSound(100, 'square', 0.4, 0.2); 
       setWrongFlash(num);
       if (window.navigator.vibrate) window.navigator.vibrate([100, 50, 100]);
       setTimeout(() => setWrongFlash(null), 200);
@@ -221,8 +218,7 @@ const App: React.FC = () => {
       .filter(s => s.difficultyId === difficulty.id)
       .sort((a, b) => a.time - b.time);
 
-    const previousBest = difficultyScores.length > 1 ? difficultyScores.filter(s => s.id !== newScore.id)[0] : null;
-    const isNewPB = !previousBest || finalTime < previousBest.time;
+    const isNewPB = difficultyScores[0].id === scoreId;
     setIsPB(isNewPB);
 
     setIsRankLoading(true);
@@ -234,13 +230,11 @@ const App: React.FC = () => {
     });
 
     try {
-      if (isNewPB) {
-        await uploadScore(newScore);
-      }
+      if (isNewPB) await uploadScore(newScore);
       const calculatedGlobalRank = await getGlobalRankForScore(difficulty.id, finalTime);
       setGlobalRank(calculatedGlobalRank);
     } catch (error) {
-      console.warn("Ranking sync issue:", error);
+      console.warn("Ranking error", error);
     } finally {
       setIsRankLoading(false);
     }
@@ -263,120 +257,51 @@ const App: React.FC = () => {
   };
 
   const shareToSocial = async (platform: 'fb' | 'tw' | 'ka' | 'ig' | 'dl' | 'copy') => {
-    const formattedTime = elapsedTime.toFixed(6);
+    const formattedTime = elapsedTime.toFixed(4);
     const shareText = t.shareMsg.replace('{time}', formattedTime);
     
     if (platform === 'copy') {
       try {
         await navigator.clipboard.writeText(`${shareText}\n${CURRENT_URL}`);
         alert(t.copySuccess);
-      } catch (e) {
-        alert(t.copyFail);
-      }
+      } catch (e) { alert(t.copyFail); }
       return;
     }
-
-    setSharingPlatform(platform);
 
     if (platform === 'ka') {
-      if (!ensureKakaoInit()) {
-        alert(t.shareFail);
-        setSharingPlatform(null);
-        return;
-      }
-
-      setIsCapturing(true);
-      setCaptureStep("RENDERING");
+      if (!ensureKakaoInit()) { alert(t.shareFail); return; }
       
-      try {
-        let finalImageUrl = cachedUploadUrl;
-        
-        if (!finalImageUrl && resultRef.current) {
-          const canvas = await html2canvas(resultRef.current, {
-            backgroundColor: '#020617',
-            scale: 1,
-            useCORS: true,
-            logging: false,
-            onclone: (clonedDoc) => {
-              const all = clonedDoc.querySelectorAll('*');
-              all.forEach((el: any) => {
-                el.style.animation = 'none';
-                el.style.transition = 'none';
-                if (el.style.backdropFilter || el.style.webkitBackdropFilter) {
-                   el.style.backdropFilter = 'none';
-                   el.style.webkitBackdropFilter = 'none';
-                   el.style.background = 'rgba(15, 23, 42, 0.95)';
-                }
-              });
-            },
-            ignoreElements: (el) => el.hasAttribute('data-html2canvas-ignore'),
-          });
-          
-          setCaptureStep("UPLOADING");
-          const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png', 0.8));
-          if (blob) {
-            finalImageUrl = await uploadResultImage(blob, currentScoreId);
-            if (finalImageUrl) setCachedUploadUrl(finalImageUrl);
-          }
-        }
-
-        setCaptureStep("SHARING");
-        window.Kakao.Share.sendDefault({
-          objectType: 'feed',
-          content: {
-            title: `Zen Numbers: ${difficulty.name[lang]}`,
-            description: `${userName}: ${formattedTime}s`,
-            imageUrl: finalImageUrl || 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=600&auto=format&fit=crop',
-            link: {
-              mobileWebUrl: CURRENT_URL,
-              webUrl: CURRENT_URL,
-            },
-          },
-          buttons: [
-            {
-              title: lang === 'KO' ? '도전하기' : 'Try Now',
-              link: {
-                mobileWebUrl: CURRENT_URL,
-                webUrl: CURRENT_URL,
-              },
-            },
-          ],
-        });
-      } catch (e) {
-        console.error("Kakao Share Fail:", e);
-        window.Kakao.Share.sendDefault({
-          objectType: 'text',
-          text: `${shareText}\n${CURRENT_URL}`,
-          link: { mobileWebUrl: CURRENT_URL, webUrl: CURRENT_URL },
-        });
-      } finally {
-        setIsCapturing(false);
-        setCaptureStep("");
-        setSharingPlatform(null);
-      }
+      /**
+       * Kakao.Share.sendCustom() 
+       * 카카오 개발자 콘솔에서 정의한 '사용자 정의 템플릿'을 사용하여 메시지를 보냅니다.
+       */
+      window.Kakao.Share.sendCustom({
+        templateId: KAKAO_TEMPLATE_ID, // 메시지 템플릿 ID (숫자)
+        templateArgs: {
+          'title': `ZENNUM : ${difficulty.name[lang]}`, // 템플릿에 설정한 ${title} 인자
+          'description': `${userName} - ${formattedTime}s\n${t.subtitle}`, // ${description} 인자
+          'imageUrl': BRAND_POSTER_URL, // ${imageUrl} 인자
+          'url': CURRENT_URL, // ${url} 인자
+        },
+      });
+      console.log("Kakao Custom Share Sent");
       return;
     }
 
+    // 인스타그램 및 저장 기능 (이미지 캡처 방식 유지)
     if (platform === 'dl' || platform === 'ig') {
-        if (!resultRef.current) {
-          setSharingPlatform(null);
-          return;
-        }
+        if (!resultRef.current) return;
         setIsCapturing(true);
         setCaptureStep("RENDERING");
         try {
           const canvas = await html2canvas(resultRef.current, {
             backgroundColor: '#020617',
-            scale: 1.5,
+            scale: 1,
             useCORS: true,
             onclone: (clonedDoc) => {
               const all = clonedDoc.querySelectorAll('*');
               all.forEach((el: any) => {
-                if (el.style.backdropFilter || el.style.webkitBackdropFilter) {
-                   el.style.backdropFilter = 'none';
-                   el.style.webkitBackdropFilter = 'none';
-                   el.style.background = 'rgba(15, 23, 42, 0.95)';
-                }
+                if (el.style.backdropFilter) el.style.backdropFilter = 'none';
               });
             }
           });
@@ -387,234 +312,299 @@ const App: React.FC = () => {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `ZenResult_${formattedTime}.png`;
+                a.download = `ZENNUM_${formattedTime}.png`;
                 a.click();
               } else if (navigator.share) {
-                const file = new File([blob], 'zen_result.png', { type: 'image/png' });
-                await navigator.share({ files: [file], title: 'Zen Numbers', text: shareText });
+                const file = new File([blob], 'zennum.png', { type: 'image/png' });
+                await navigator.share({ files: [file], title: 'ZENNUM', text: shareText });
               }
             }
             setIsCapturing(false);
-            setCaptureStep("");
-            setSharingPlatform(null);
           }, 'image/png');
-        } catch (e) {
-          setIsCapturing(false);
-          setCaptureStep("");
-          setSharingPlatform(null);
-        }
+        } catch (e) { setIsCapturing(false); }
     } else {
       const url = platform === 'fb' 
         ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(CURRENT_URL)}`
         : `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(CURRENT_URL)}`;
       window.open(url, '_blank');
-      setSharingPlatform(null);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center bg-slate-950 text-slate-100 selection:bg-indigo-500/30 overflow-x-hidden relative">
-      <div className="fixed inset-0 -z-10 opacity-20 pointer-events-none">
-        <div className="absolute top-[-5%] left-[-10%] w-[600px] h-[600px] bg-indigo-600 rounded-full blur-[100px]"></div>
-        <div className="absolute bottom-[-5%] right-[-10%] w-[600px] h-[600px] bg-purple-600 rounded-full blur-[100px]"></div>
+    <div className="min-h-screen w-full flex flex-col items-center bg-slate-950 text-slate-100 selection:bg-cyan-500/30 overflow-x-hidden relative font-['Outfit']">
+      {/* Background FX */}
+      <div className="fixed inset-0 -z-10 opacity-30 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-20%] w-[800px] h-[800px] bg-cyan-600/20 rounded-full blur-[120px] animate-pulse"></div>
+        <div className="absolute bottom-[-10%] right-[-20%] w-[800px] h-[800px] bg-red-600/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
       </div>
 
       {status === 'SETUP' ? (
-        <div className="flex-grow flex flex-col items-center justify-center p-6 w-full max-w-md animate-in fade-in zoom-in-95">
-          <div className="glass w-full p-10 rounded-[3.5rem] text-center border-white/10 shadow-4xl relative">
-            <div className="w-20 h-20 bg-indigo-500/20 rounded-[2rem] flex items-center justify-center mx-auto mb-8">
-              <User size={40} className="text-indigo-400" />
+        <div className="flex-grow flex flex-col items-center justify-center p-6 w-full max-w-md animate-in fade-in zoom-in-95 duration-500">
+          <div className="glass w-full p-10 rounded-[3rem] text-center border-white/10 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-white/50 to-red-500"></div>
+            <div className="w-24 h-24 bg-cyan-500/10 rounded-full flex items-center justify-center mx-auto mb-10 border border-cyan-500/20 shadow-[0_0_30px_rgba(6,182,212,0.2)]">
+              <Zap size={48} className="text-cyan-400 animate-pulse" />
             </div>
-            <h2 className="text-2xl font-black mb-2">{t.welcome}</h2>
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-10">{t.enterName}</p>
+            <h2 className="text-4xl font-black mb-4 tracking-tighter italic text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">{t.title}</h2>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em] mb-12">{t.enterName}</p>
             <input 
               type="text" 
               value={userName} 
               onChange={(e) => setUserName(e.target.value.slice(0, 10))}
-              placeholder={lang === 'KO' ? "이름 입력" : "ENTER NAME"}
-              className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-center text-xl font-black outline-none focus:border-indigo-500 transition-all mb-6"
+              placeholder="PLAYER NAME"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl py-5 px-6 text-center text-2xl font-black outline-none focus:border-cyan-500 transition-all mb-8 placeholder:text-slate-800"
             />
             <button 
               onClick={() => { if(userName.trim()) { localStorage.setItem('zen_user_name', userName); setStatus('IDLE'); } }}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 py-5 rounded-3xl font-black uppercase tracking-widest transition-all"
+              className="w-full bg-cyan-600 hover:bg-cyan-500 py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] transition-all shadow-[0_10px_40px_rgba(8,145,178,0.3)] active:scale-95"
             >
               {t.saveName}
             </button>
-            <button onClick={() => setLang(l => l === 'KO' ? 'EN' : 'KO')} className="mt-8 text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 mx-auto"><Globe size={14} /> {lang === 'KO' ? 'English' : '한국어'}</button>
+            <button onClick={() => setLang(l => l === 'KO' ? 'EN' : 'KO')} className="mt-10 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-cyan-400 transition-colors flex items-center gap-2 mx-auto"><Globe size={14} /> {lang === 'KO' ? 'English' : '한국어'}</button>
           </div>
         </div>
       ) : (
         <>
-          <div className={`fixed top-6 left-6 right-6 z-40 flex justify-between items-center transition-opacity ${status === 'FINISHED' ? 'opacity-0' : 'opacity-100'}`}>
-            <div className="flex gap-2">
-              <button onClick={() => setStatus('SETUP')} className="glass flex items-center gap-2 px-4 py-2 rounded-2xl border-white/10 group">
-                <User size={14} className="text-slate-500 group-hover:text-indigo-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">{userName}</span>
+          <div className={`fixed top-8 left-8 right-8 z-40 flex justify-between items-center transition-all ${status === 'FINISHED' ? 'opacity-0 scale-90' : 'opacity-100'}`}>
+            <div className="flex gap-3">
+              <button onClick={() => setStatus('SETUP')} className="glass flex items-center gap-3 px-5 py-2.5 rounded-2xl border-white/10 group hover:border-cyan-500/30 transition-all">
+                <User size={16} className="text-cyan-400" />
+                <span className="text-[11px] font-black uppercase tracking-widest text-slate-300">{userName}</span>
               </button>
-              <button onClick={() => setAudioEnabled(!audioEnabled)} className="glass p-2.5 rounded-2xl border-white/10 text-slate-400">
-                {audioEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+              <button onClick={() => setAudioEnabled(!audioEnabled)} className="glass p-3 rounded-2xl border-white/10 text-slate-400 hover:text-cyan-400 transition-all">
+                {audioEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
               </button>
             </div>
-            <button onClick={() => setLang(l => l === 'KO' ? 'EN' : 'KO')} className="glass flex items-center gap-2 px-4 py-2 rounded-2xl border-white/10 transition-all active:scale-95 group"><Globe size={16} className="text-indigo-400 group-hover:rotate-12 transition-transform" /><span className="text-xs font-black">{lang}</span></button>
+            <button onClick={() => setLang(l => l === 'KO' ? 'EN' : 'KO')} className="glass flex items-center gap-2 px-5 py-2.5 rounded-2xl border-white/10 group hover:border-cyan-500/30 transition-all active:scale-95"><Globe size={18} className="text-cyan-400 group-hover:rotate-45 transition-transform" /><span className="text-sm font-black text-white">{lang}</span></button>
           </div>
 
-          <header className={`w-full pt-20 pb-8 text-center transition-all ${status !== 'IDLE' ? 'opacity-30 scale-90 pt-10' : ''}`}>
-            <h1 className="text-5xl md:text-7xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 to-pink-400">{t.title}</h1>
-            <p className="text-slate-500 font-bold tracking-[0.4em] text-[10px] uppercase">{t.subtitle}</p>
+          <header className={`w-full pt-28 pb-12 text-center transition-all duration-700 ${status !== 'IDLE' ? 'opacity-20 scale-90 pt-16 translate-y-[-20px]' : ''}`}>
+            <h1 className="text-7xl md:text-9xl font-black tracking-tighter italic bg-clip-text text-transparent bg-gradient-to-b from-white via-white to-cyan-800 drop-shadow-[0_10px_30px_rgba(255,255,255,0.1)]">{t.title}</h1>
+            <p className="text-cyan-500/80 font-black tracking-[0.6em] text-[12px] uppercase mt-2">{t.subtitle}</p>
           </header>
 
-          <main className="w-full max-w-lg px-4 flex-grow">
+          <main className="w-full max-w-lg px-6 flex-grow">
             {status === 'IDLE' && (
-              <div className="glass p-6 md:p-10 rounded-[3rem] w-full shadow-2xl space-y-6 animate-in slide-in-from-bottom-8">
-                <h2 className="text-xl font-black flex items-center gap-3"><Award size={24} className="text-indigo-400" /> {t.selectMode}</h2>
-                <div className="grid gap-4">
+              <div className="glass p-8 md:p-12 rounded-[4rem] w-full shadow-4xl space-y-8 animate-in slide-in-from-bottom-12 duration-700 border-white/5">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-2xl font-black flex items-center gap-4 italic"><Award size={28} className="text-cyan-400" /> {t.selectMode}</h2>
+                </div>
+                <div className="grid gap-5">
                   {DIFFICULTIES.map((d) => {
                     const best = localTopScores[d.id][0];
+                    const isActive = difficulty.id === d.id;
                     return (
                       <div key={d.id} className="relative group">
-                        <button onClick={() => setDifficulty(d)} className={`w-full flex items-center justify-between p-5 rounded-[2rem] border transition-all ${difficulty.id === d.id ? 'bg-indigo-500/20 border-indigo-400' : 'bg-white/5 border-transparent'}`}>
+                        <button onClick={() => setDifficulty(d)} className={`w-full flex items-center justify-between p-6 rounded-[2.5rem] border-2 transition-all duration-300 ${isActive ? 'bg-cyan-500/10 border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.1)]' : 'bg-white/5 border-transparent hover:bg-white/10'}`}>
                           <div className="text-left">
-                            <span className="font-black text-lg block">{d.name[lang]}</span>
-                            <span className="text-slate-500 text-[9px] font-black tracking-widest">{d.size}x{d.size} • {d.total} {lang === 'KO' ? '숫자' : 'NUMS'}</span>
+                            <span className={`font-black text-xl block italic tracking-tight ${isActive ? 'text-white' : 'text-slate-400'}`}>{d.name[lang]}</span>
+                            <span className="text-slate-600 text-[10px] font-black tracking-widest">{d.total} NUMBERS</span>
                           </div>
-                          <div className="flex items-center gap-4">
-                            {best && <div className="text-right"><div className="text-[8px] text-slate-500 font-black">{t.best}</div><div className="text-indigo-400 font-black text-xs">{best.time.toFixed(6)}s</div></div>}
-                            <ChevronRight size={20} className={difficulty.id === d.id ? 'text-indigo-400' : 'text-slate-700'} />
+                          <div className="flex items-center gap-5">
+                            {best && <div className="text-right"><div className="text-[9px] text-red-500 font-black tracking-widest">{t.best}</div><div className="text-white font-black text-sm">{best.time.toFixed(4)}s</div></div>}
+                            <ChevronRight size={24} className={isActive ? 'text-cyan-400' : 'text-slate-800'} />
                           </div>
                         </button>
-                        <button onClick={(e) => { e.stopPropagation(); loadGlobalRankings(d.id); }} className="absolute -right-2 -top-2 p-2.5 bg-slate-900 border border-slate-700 rounded-2xl text-yellow-500 shadow-xl z-10 hover:scale-110 transition-transform"><Trophy size={16} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); loadGlobalRankings(d.id); }} className="absolute -right-3 -top-3 p-3 bg-slate-900 border border-slate-700 rounded-2xl text-yellow-500 shadow-2xl hover:scale-110 active:scale-90 transition-all z-10"><Trophy size={18} /></button>
                       </div>
                     );
                   })}
                 </div>
-                <button onClick={startGame} className="w-full mt-4 bg-gradient-to-br from-indigo-500 to-pink-600 text-white font-black py-5 rounded-[2rem] shadow-2xl flex items-center justify-center gap-4 uppercase tracking-widest active:scale-95"><Play size={24} fill="currentColor" /> {t.start}</button>
+                <button onClick={startGame} className="w-full mt-6 bg-white text-slate-950 font-black py-6 rounded-[2.5rem] shadow-[0_15px_50px_rgba(255,255,255,0.2)] flex items-center justify-center gap-5 uppercase tracking-[0.3em] text-lg hover:bg-cyan-400 transition-all active:scale-95 group">
+                  <Play size={28} fill="currentColor" className="group-hover:scale-110 transition-transform" /> {t.start}
+                </button>
               </div>
             )}
 
-            {status === 'COUNTDOWN' && <div className="flex items-center justify-center h-80 text-[12rem] font-black text-white drop-shadow-2xl animate-ping opacity-50">{countdown === 0 ? "GO" : countdown}</div>}
+            {status === 'COUNTDOWN' && (
+              <div className="flex items-center justify-center h-96 text-[15rem] font-black text-white italic drop-shadow-[0_0_50px_rgba(6,182,212,0.5)] animate-pulse">
+                {countdown === 0 ? "GO!" : countdown}
+              </div>
+            )}
 
             {(status === 'PLAYING' || status === 'FINISHED') && (
-              <div className={`w-full flex flex-col items-center gap-6 pb-20 transition-all ${status === 'FINISHED' ? 'blur-sm scale-95 opacity-50' : ''}`}>
-                <div className="w-full flex justify-between glass px-8 py-5 rounded-[2.5rem] sticky top-4 z-20 backdrop-blur-3xl">
-                  <div className="flex flex-col"><span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{t.progression}</span><div className="text-2xl font-black">{nextExpected - 1}<span className="text-slate-600 mx-1">/</span><span className="text-slate-400 text-sm">{difficulty.total}</span></div></div>
-                  <div className="flex flex-col items-end"><span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{t.elapsed}</span><div className="text-2xl font-black text-indigo-300">{elapsedTime.toFixed(4)}s</div></div>
+              <div className={`w-full flex flex-col items-center gap-8 pb-32 transition-all duration-500 ${status === 'FINISHED' ? 'blur-2xl scale-90 opacity-0 pointer-events-none' : 'opacity-100'}`}>
+                {/* HUD 스타일 상단바 */}
+                <div className="w-full flex justify-between gap-4 px-2">
+                  <div className="flex-1 bg-black/40 border-l-4 border-cyan-500 p-5 rounded-2xl backdrop-blur-3xl shadow-lg">
+                    <span className="text-[10px] text-cyan-500 font-black uppercase tracking-[0.2em] mb-1 block italic">{t.time}</span>
+                    <div className="text-3xl font-black text-white tabular-nums">{elapsedTime.toFixed(2)}</div>
+                  </div>
+                  <div className="flex-1 bg-black/40 border-r-4 border-red-500 p-5 rounded-2xl backdrop-blur-3xl shadow-lg text-right">
+                    <span className="text-[10px] text-red-500 font-black uppercase tracking-[0.2em] mb-1 block italic">{t.progression}</span>
+                    <div className="text-3xl font-black text-white tabular-nums">{nextExpected - 1}<span className="text-slate-600 mx-1 text-sm italic">/</span><span className="text-slate-400 text-lg">{difficulty.total}</span></div>
+                  </div>
                 </div>
-                <div className="glass p-4 md:p-6 rounded-[3rem] grid gap-3 w-full aspect-square max-w-[500px]" style={{ gridTemplateColumns: `repeat(${difficulty.size}, 1fr)` }}>
-                  {numbers.map((num) => (
-                    <button key={num} disabled={num < nextExpected || status === 'FINISHED'} onClick={() => handleCellClick(num)} className={`relative rounded-2xl flex items-center justify-center text-2xl font-black transition-all ${num < nextExpected || status === 'FINISHED' ? 'opacity-0 scale-50 pointer-events-none' : 'bg-white/5 border border-white/10 hover:bg-indigo-500/20 active:scale-90'} ${wrongFlash === num ? 'bg-red-500 text-white shake' : 'text-slate-300'}`}>{num}</button>
-                  ))}
+
+                {/* 게임 그리드 */}
+                <div className="bg-white/5 p-4 md:p-6 rounded-[3rem] grid gap-3 w-full aspect-square max-w-[500px] border border-white/10 shadow-4xl" style={{ gridTemplateColumns: `repeat(${difficulty.size}, 1fr)` }}>
+                  {numbers.map((num) => {
+                    const isCorrect = num < nextExpected;
+                    return (
+                      <button 
+                        key={num} 
+                        disabled={isCorrect || status === 'FINISHED'} 
+                        onClick={() => handleCellClick(num)} 
+                        className={`relative rounded-xl md:rounded-2xl flex items-center justify-center text-3xl font-black italic transition-all duration-200 
+                          ${isCorrect ? 'opacity-0 scale-0 pointer-events-none' : 'bg-slate-900 border border-white/10 hover:border-cyan-500/50 shadow-lg'} 
+                          ${wrongFlash === num ? 'bg-red-600 text-white shake border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)]' : 'text-white'}`}
+                      >
+                        {num}
+                        {/* 글로우 효과 */}
+                        <div className={`absolute inset-0 rounded-xl md:rounded-2xl transition-opacity duration-300 ${!isCorrect ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'} shadow-[inset_0_0_20px_rgba(6,182,212,0.2)]`}></div>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
           </main>
 
-          <div className={`fixed inset-0 z-[100] flex items-end justify-center transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${status === 'FINISHED' ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}>
-            <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-md" onClick={() => setStatus('IDLE')}></div>
-            <div ref={resultRef} className="w-full max-w-2xl glass bg-slate-900/95 rounded-t-[4rem] p-10 flex flex-col items-center relative shadow-2xl overflow-hidden">
-              <div data-html2canvas-ignore className="w-12 h-1.5 bg-white/10 rounded-full mb-10"></div>
+          {/* 결과 모달 - 포스터 스타일 */}
+          <div className={`fixed inset-0 z-[100] flex items-center justify-center transition-all duration-1000 cubic-bezier(0.23,1,0.32,1) ${status === 'FINISHED' ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0'}`}>
+            <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-2xl" onClick={() => setStatus('IDLE')}></div>
+            <div ref={resultRef} className="w-full max-w-lg glass bg-black/80 rounded-[4rem] p-12 flex flex-col items-center relative shadow-[0_0_100px_rgba(6,182,212,0.15)] overflow-hidden border-t border-white/10">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-white to-red-500"></div>
               
-              <div className="flex flex-col items-center mb-6">
-                <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-lg mb-4">
-                  <Trophy size={32} className="text-white" />
+              <div data-html2canvas-ignore className="w-16 h-1 bg-white/10 rounded-full mb-12"></div>
+              
+              <div className="flex flex-col items-center mb-10">
+                <div className="w-20 h-20 bg-cyan-500/20 rounded-[2rem] flex items-center justify-center shadow-lg mb-6 border border-cyan-500/20">
+                  <Trophy size={40} className="text-cyan-400" />
                 </div>
-                <h3 className="text-4xl font-black italic uppercase tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500">{t.complete}</h3>
-                <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em] mt-1">{difficulty.name[lang]} CHALLENGE</p>
+                <h3 className="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-xl">{t.complete}</h3>
+                <p className="text-[11px] text-slate-500 font-black uppercase tracking-[0.5em] mt-3">TARGET ACQUIRED</p>
               </div>
 
-              {isPB && <div className="bg-green-500/20 border border-green-500/50 text-green-400 px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 animate-pulse flex items-center gap-2"><ShieldCheck size={14} /> {t.pbUpdated}</div>}
+              {isPB && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-400 px-8 py-2.5 rounded-full text-[11px] font-black uppercase tracking-[0.2em] mb-10 animate-bounce flex items-center gap-3">
+                  <ShieldCheck size={16} /> {t.pbUpdated}
+                </div>
+              )}
               
-              <div className="grid grid-cols-2 gap-4 w-full mb-8">
-                <div className="bg-white/5 p-6 rounded-[2.5rem] flex flex-col items-center border border-white/5"><span className="text-[9px] text-slate-500 uppercase font-black">{t.elapsed}</span><div className="text-3xl font-black text-indigo-300">{elapsedTime.toFixed(6)}s</div></div>
-                <div className="bg-indigo-500/10 p-6 rounded-[2.5rem] flex flex-col items-center border border-white/5"><span className="text-[9px] text-indigo-400 uppercase font-black">{t.globalRank}</span><div className="text-3xl font-black text-white">#{globalRank || '...'}</div></div>
+              <div className="grid grid-cols-2 gap-5 w-full mb-10">
+                <div className="bg-white/5 p-8 rounded-[2.5rem] flex flex-col items-center border border-white/5">
+                  <span className="text-[10px] text-cyan-500 uppercase font-black tracking-widest mb-1 italic">{t.time}</span>
+                  <div className="text-4xl font-black text-white italic">{elapsedTime.toFixed(4)}s</div>
+                </div>
+                <div className="bg-white/5 p-8 rounded-[2.5rem] flex flex-col items-center border border-white/5">
+                  <span className="text-[10px] text-red-500 uppercase font-black tracking-widest mb-1 italic">{t.globalRank}</span>
+                  <div className="text-4xl font-black text-white italic">#{globalRank || '---'}</div>
+                </div>
               </div>
 
               {aiMessage ? (
-                <div className="w-full bg-white/5 p-6 rounded-[2.5rem] mb-8 flex gap-4 text-left border border-white/5">
-                  <MessageSquareQuote size={20} className="text-indigo-400 flex-shrink-0" />
-                  <p className="text-slate-200 italic font-bold">"{aiMessage}"</p>
+                <div className="w-full bg-white/5 p-8 rounded-[2.5rem] mb-10 flex gap-5 text-left border border-white/5 shadow-inner">
+                  <MessageSquareQuote size={24} className="text-cyan-400 flex-shrink-0" />
+                  <p className="text-slate-200 italic font-bold leading-relaxed">"{aiMessage}"</p>
                 </div>
               ) : isAiLoading ? (
-                 <div className="w-full py-10 flex flex-col items-center opacity-30 animate-pulse"><Loader2 className="animate-spin mb-2" size={20} /><span className="text-[8px] font-black uppercase tracking-widest">{t.evaluating}</span></div>
+                 <div className="w-full py-12 flex flex-col items-center opacity-30 animate-pulse">
+                   <Loader2 className="animate-spin mb-3 text-cyan-400" size={24} />
+                   <span className="text-[9px] font-black uppercase tracking-[0.3em]">{t.evaluating}</span>
+                 </div>
               ) : null}
 
-              <div className="flex items-center gap-2 mb-8 opacity-40">
-                <Link size={12} className="text-slate-400" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">ZEN NUMBERS • {window.location.host}</span>
+              <div className="flex items-center gap-3 mb-12 opacity-30">
+                <LinkIcon size={14} className="text-slate-400" />
+                <span className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">ZENNUM • SEQUENCE MASTER</span>
               </div>
 
-              <div data-html2canvas-ignore className="grid grid-cols-2 gap-4 w-full">
-                <button onClick={() => setShowShareModal(true)} className="bg-indigo-600 py-6 rounded-3xl font-black border-t border-white/10 flex items-center justify-center gap-3 uppercase text-xs tracking-widest transition-transform active:scale-95 shadow-xl"><Share2 size={20} /> {t.share}</button>
-                <button onClick={startGame} className="bg-white/5 py-6 rounded-3xl font-black flex items-center justify-center gap-3 uppercase text-xs tracking-widest border border-white/10 transition-transform active:scale-95"><RotateCcw size={20} /> {t.retry}</button>
+              <div data-html2canvas-ignore className="grid grid-cols-2 gap-5 w-full">
+                <button onClick={() => setShowShareModal(true)} className="bg-cyan-600 hover:bg-cyan-500 py-6 rounded-3xl font-black border-t border-white/10 flex items-center justify-center gap-4 uppercase text-sm tracking-widest transition-all active:scale-95 shadow-xl">
+                  <Share2 size={24} /> {t.share}
+                </button>
+                <button onClick={startGame} className="bg-white/5 py-6 rounded-3xl font-black flex items-center justify-center gap-4 uppercase text-sm tracking-widest border border-white/10 transition-all hover:bg-white/10 active:scale-95">
+                  <RotateCcw size={24} /> {t.retry}
+                </button>
               </div>
-              <button data-html2canvas-ignore onClick={() => setStatus('IDLE')} className="mt-6 text-slate-600 text-[10px] uppercase font-black tracking-widest hover:text-slate-400 transition-colors">{t.home}</button>
-              
-              {isCapturing && (
-                <div className="absolute inset-0 bg-slate-900/95 backdrop-blur-2xl flex flex-col items-center justify-center z-50 animate-in fade-in duration-300">
-                  <Loader2 className="animate-spin text-indigo-400 mb-6" size={50} />
-                  <span className="text-xs font-black uppercase tracking-[0.3em] text-white text-center px-10">
-                    {captureStep === "RENDERING" ? t.rendering : 
-                     captureStep === "UPLOADING" ? t.uploading : 
-                     t.sharing}
-                  </span>
-                  <button onClick={() => {setIsCapturing(false); setSharingPlatform(null);}} className="mt-10 text-[9px] font-black text-slate-500 uppercase tracking-widest border border-white/10 px-4 py-2 rounded-xl active:bg-white/5">{t.cancel}</button>
-                </div>
-              )}
+              <button data-html2canvas-ignore onClick={() => setStatus('IDLE')} className="mt-10 text-slate-700 text-[11px] uppercase font-black tracking-[0.4em] hover:text-cyan-400 transition-colors italic">{t.home}</button>
             </div>
           </div>
 
+          {/* 공유 모달 */}
           {showShareModal && (
             <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 backdrop-blur-3xl bg-slate-950/80 animate-in fade-in zoom-in-95 duration-300">
-              <div className="glass w-full max-sm:max-w-xs max-w-sm rounded-[4rem] shadow-4xl border-white/10 p-10 flex flex-col items-center">
-                <div className="w-16 h-16 bg-indigo-500/20 rounded-3xl flex items-center justify-center mb-6"><Share2 size={32} className="text-indigo-400" /></div>
-                <h3 className="text-2xl font-black mb-3 uppercase tracking-tighter">{t.share}</h3>
-                <p className="text-slate-500 text-[10px] text-center mb-10 font-bold px-4 leading-relaxed uppercase tracking-widest">{t.selectPlatform}</p>
-                <div className="grid grid-cols-2 gap-6 w-full mb-10">
-                  <button onClick={() => shareToSocial('ka')} className="flex flex-col items-center gap-3 group relative">
-                    <div className="w-14 h-14 bg-[#FEE500] text-[#191919] rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><MessageCircle size={24} fill="currentColor" /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{t.kakaotalk}</span>
-                    {isCapturing && sharingPlatform === 'ka' && <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-2xl"><Loader2 size={24} className="animate-spin text-white" /></div>}
-                  </button>
-                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-3 group relative">
-                    <div className="w-14 h-14 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Instagram size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{t.instagram}</span>
-                    {isCapturing && sharingPlatform === 'ig' && <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-2xl"><Loader2 size={24} className="animate-spin text-white" /></div>}
-                  </button>
-                  <button onClick={() => shareToSocial('dl')} className="flex flex-col items-center gap-3 group relative">
-                    <div className="w-14 h-14 bg-white/10 text-white rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Download size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{t.saveImage}</span>
-                    {isCapturing && sharingPlatform === 'dl' && <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-2xl"><Loader2 size={24} className="animate-spin text-white" /></div>}
-                  </button>
-                  <button onClick={() => shareToSocial('copy')} className="flex flex-col items-center gap-3 group">
-                    <div className="w-14 h-14 bg-indigo-600/20 text-indigo-400 rounded-2xl flex items-center justify-center group-active:scale-90 transition-transform"><Copy size={24} /></div>
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{t.copyLink}</span>
-                  </button>
+              <div className="glass w-full max-w-sm rounded-[4rem] shadow-4xl border-white/10 p-12 flex flex-col items-center overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-red-500"></div>
+                <div className="w-18 h-18 bg-cyan-500/10 rounded-3xl flex items-center justify-center mb-8 border border-cyan-500/20">
+                  <Share2 size={36} className="text-cyan-400" />
                 </div>
-                <button onClick={() => setShowShareModal(false)} className="w-full py-5 glass border-white/10 rounded-3xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-white/5 transition-colors">{t.close}</button>
-              </div>
-            </div>
-          )}
-
-          {showRankingsFor && (
-            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-2xl bg-slate-950/80 animate-in fade-in">
-              <div className="glass w-full max-w-md rounded-[3.5rem] shadow-4xl border-white/10 flex flex-col max-h-[85vh]">
-                <div className="p-8 border-b border-white/5 flex justify-between items-center"><h3 className="text-xl font-black flex items-center gap-3"><Trophy size={20} className="text-yellow-500" /> {t.globalTop}</h3><button onClick={() => setShowRankingsFor(null)} className="p-2 hover:bg-white/5 rounded-xl transition-colors"><X size={24} /></button></div>
-                <div className="overflow-y-auto p-6 space-y-3">
-                  {globalScores.length > 0 ? globalScores.map((s, i) => (
-                    <div key={s.id} className={`flex justify-between items-center p-5 rounded-3xl border transition-all ${s.userId === userId ? 'bg-indigo-500/20 border-indigo-500' : 'bg-white/5 border-transparent'}`}>
-                      <div className="flex items-center gap-4"><div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black ${i < 3 ? 'bg-yellow-500 text-black' : 'bg-white/10 text-slate-500'}`}>{i + 1}</div><div><div className="text-[9px] font-black uppercase text-slate-500">{s.userName}</div><div className="text-lg font-black">{s.time.toFixed(6)}s</div></div></div>
-                      {i < 3 && <Medal size={20} className="text-yellow-500" />}
+                <h3 className="text-3xl font-black mb-4 uppercase tracking-tighter italic">{t.share}</h3>
+                <p className="text-slate-500 text-[11px] text-center mb-12 font-bold px-4 leading-relaxed uppercase tracking-[0.3em]">{t.selectPlatform}</p>
+                
+                <div className="grid grid-cols-2 gap-8 w-full mb-12">
+                  {/* 카카오톡 공유 버튼 */}
+                  <button onClick={() => shareToSocial('ka')} className="flex flex-col items-center gap-4 group">
+                    <div className="w-16 h-16 bg-[#FEE500] text-[#191919] rounded-[1.5rem] flex items-center justify-center group-active:scale-90 transition-transform shadow-lg">
+                      <MessageCircle size={32} fill="currentColor" />
                     </div>
-                  )) : <div className="py-20 text-center opacity-30 text-[10px] font-black uppercase tracking-[0.3em]">{t.noRecords}</div>}
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.kakaotalk}</span>
+                  </button>
+                  <button onClick={() => shareToSocial('ig')} className="flex flex-col items-center gap-4 group relative">
+                    <div className="w-16 h-16 bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white rounded-[1.5rem] flex items-center justify-center group-active:scale-90 transition-transform shadow-lg">
+                      <Instagram size={32} />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.instagram}</span>
+                    {isCapturing && <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-[1.5rem]"><Loader2 size={24} className="animate-spin text-white" /></div>}
+                  </button>
+                  <button onClick={() => shareToSocial('dl')} className="flex flex-col items-center gap-4 group relative">
+                    <div className="w-16 h-16 bg-white/10 text-white rounded-[1.5rem] flex items-center justify-center group-active:scale-90 transition-transform shadow-lg border border-white/10">
+                      <Download size={32} />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.saveImage}</span>
+                    {isCapturing && <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-[1.5rem]"><Loader2 size={24} className="animate-spin text-white" /></div>}
+                  </button>
+                  <button onClick={() => shareToSocial('copy')} className="flex flex-col items-center gap-4 group">
+                    <div className="w-16 h-16 bg-white/10 text-cyan-400 rounded-[1.5rem] flex items-center justify-center group-active:scale-90 transition-transform shadow-lg border border-white/10">
+                      <Copy size={32} />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t.copyLink}</span>
+                  </button>
                 </div>
-                <div className="p-8"><button onClick={() => setShowRankingsFor(null)} className="w-full py-5 glass rounded-3xl text-[10px] font-black uppercase tracking-widest hover:bg-white/5 transition-colors">{t.close}</button></div>
+                
+                <button onClick={() => setShowShareModal(false)} className="w-full py-6 glass border-white/10 rounded-[2rem] text-[11px] font-black uppercase tracking-[0.4em] text-slate-400 hover:text-white transition-all">{t.close}</button>
               </div>
             </div>
           )}
 
-          <footer className="w-full py-16 text-center text-slate-800 text-[10px] font-black tracking-[0.5em] uppercase">Zen Edition 5.1 • Master Net</footer>
+          {/* 랭킹 모달 */}
+          {showRankingsFor && (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 backdrop-blur-2xl bg-slate-950/90 animate-in fade-in">
+              <div className="glass w-full max-w-md rounded-[4rem] shadow-4xl border-white/10 flex flex-col max-h-[80vh] overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-cyan-500"></div>
+                <div className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5">
+                  <h3 className="text-2xl font-black flex items-center gap-4 italic uppercase tracking-tight">
+                    <Trophy size={28} className="text-yellow-500" /> {t.globalTop}
+                  </h3>
+                  <button onClick={() => setShowRankingsFor(null)} className="p-3 hover:bg-white/10 rounded-2xl transition-all"><X size={28} /></button>
+                </div>
+                <div className="overflow-y-auto p-8 space-y-4">
+                  {globalScores.length > 0 ? globalScores.map((s, i) => (
+                    <div key={s.id} className={`flex justify-between items-center p-6 rounded-[2rem] border-2 transition-all ${s.userId === userId ? 'bg-cyan-500/10 border-cyan-500/50 shadow-lg' : 'bg-white/5 border-transparent'}`}>
+                      <div className="flex items-center gap-5">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black italic text-lg ${i < 3 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'bg-white/10 text-slate-500'}`}>{i + 1}</div>
+                        <div>
+                          <div className="text-[10px] font-black uppercase text-slate-500 tracking-widest mb-1">{s.userName}</div>
+                          <div className="text-xl font-black text-white italic tabular-nums">{s.time.toFixed(4)}s</div>
+                        </div>
+                      </div>
+                      {i < 3 && <Medal size={24} className="text-yellow-500" />}
+                    </div>
+                  )) : <div className="py-24 text-center opacity-20 text-[12px] font-black uppercase tracking-[0.5em]">{t.noRecords}</div>}
+                </div>
+                <div className="p-10 bg-white/5 border-t border-white/5">
+                  <button onClick={() => setShowRankingsFor(null)} className="w-full py-6 glass rounded-[2rem] text-[11px] font-black uppercase tracking-[0.5em] hover:bg-white/10 transition-all">{t.close}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <footer className="w-full py-12 text-center text-slate-800 text-[11px] font-black tracking-[0.6em] uppercase italic">ZENNUM VER 5.2 • ELITE EDITION</footer>
         </>
       )}
-      <style>{`.shake { animation: shake 0.12s ease-in-out 3; } @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }`}</style>
+      <style>{`.shake { animation: shake 0.12s ease-in-out 3; } @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }`}</style>
     </div>
   );
 };
